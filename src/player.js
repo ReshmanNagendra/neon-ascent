@@ -57,9 +57,9 @@ export class Player {
     // Thrust power per second (was 620 — reduced so boost doesn't feel instant)
     this.BOOST_POWER = 380;
     // Horizontal steering force (was 320 — gentler so player can make fine adjustments)
-    this.STEER_FORCE = 280;
+    this.STEER_FORCE = 1500;
     // Max horizontal speed (was 320)
-    this.MAX_VX = 280;
+    this.MAX_VX = 350;
     // Canvas width for clamping
     this.canvasW = canvasW;
 

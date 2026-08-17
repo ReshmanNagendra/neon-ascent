@@ -10,7 +10,7 @@
 export const BASE_GRAVITY = 240;    // was 380 — slower fall gives more reaction time
 
 /** Air drag coefficient applied to horizontal velocity each frame. */
-export const HORIZONTAL_DRAG = 2.2; // was 2.8 — softer steering friction
+export const HORIZONTAL_DRAG = 5.0; // tighter steering friction
 
 /** Air drag coefficient for vertical velocity when NOT boosting. */
 export const VERTICAL_DRAG = 0.25; // was 0.35 — glides down instead of dropping
