@@ -39,8 +39,17 @@ export class World {
     /** @type {FuelCanister[]} */
     this.fuelCanisters = [];
 
+    /** @type {ShieldPowerup[]} */
+    this.shields = [];
+
+    /** @type {BoostPowerup[]} */
+    this.boosts = [];
+
     /** Highest chunk we've generated (measured in CHUNK_HEIGHT units) */
     this._generatedUpTo = 0;
+
+    /** Current world/dimension level (1 = Normal, 2 = Alien, 3 = Void, 4 = Quantum) */
+    this.currentWorld = 1;
 
     // Parallax star layers
     this._stars = this._generateStars(200);
@@ -104,15 +113,15 @@ export class World {
   /**
    * Ensure world is generated up to `chunksAhead` chunks above camY.
    */
-  ensureGenerated(camTopY) {
+  ensureGenerated(camTopY, playerFuelRatio = 1.0) {
     const neededChunk = Math.floor(camTopY / CHUNK_HEIGHT) + 3;
     while (this._generatedUpTo < neededChunk) {
-      this._generateChunks(1, this._generatedUpTo);
+      this._generateChunks(1, this._generatedUpTo, playerFuelRatio);
       this._generatedUpTo++;
     }
   }
 
-  _generateChunks(count, startChunk = 0) {
+  _generateChunks(count, startChunk = 0, playerFuelRatio = 1.0) {
     for (let c = startChunk; c < startChunk + count; c++) {
       const baseY = c * CHUNK_HEIGHT;
 
@@ -133,11 +142,16 @@ export class World {
 
       // Difficulty ramps gradually from 0 → 1 between 100m and 12 000m.
       // Using a slower exponent keeps early-game light and late-game punishing.
-      const difficulty = Math.min(1.0, Math.pow((baseY - CLEAR_ZONE_HEIGHT) / 12000, 0.7));
+      let difficulty = Math.min(1.0, Math.pow((baseY - CLEAR_ZONE_HEIGHT) / 12000, 0.7));
+      
+      // World scaling: Each new world increases base difficulty
+      const worldScale = this.currentWorld - 1; // 0 for world 1, 1 for world 2, etc.
+      difficulty = Math.min(1.5, difficulty + worldScale * 0.3); // Cap max difficulty at 1.5
 
       // Hazard count: significantly reduced. Max 1 per chunk, scaling with difficulty.
-      const numHazards = Math.random() < (0.4 + difficulty * 0.6) ? 1 : 0;
-      const numSparks  = Math.floor(SPARKS_PER_CHUNK * (0.5 + difficulty * 0.5));
+      const maxHazards = 1 + Math.floor(worldScale / 2); // Can have more hazards in higher worlds
+      const numHazards = Math.random() < (0.4 + difficulty * 0.6) ? maxHazards : 0;
+      const numSparks  = Math.floor(SPARKS_PER_CHUNK * (0.5 + Math.min(1.0, difficulty) * 0.5));
 
       // Spawn hazards — ensure a clear corridor on at least one side so the
       // player always has a way through (never a full-width wall).
@@ -172,17 +186,50 @@ export class World {
         this.sparks.push(new Spark(x, y, value));
       }
 
-      // Spawn fuel canisters — only above the fuel start height.
-      // Frequency: 1 canister guaranteed per chunk, chance of a second at altitude.
+      // Spawn fuel canisters — adaptive to player's current fuel level
       if (baseY >= FUEL_START_HEIGHT) {
-        const numFuel = Math.random() < 0.2 ? 1 : 0;
+        // Base chance is low if full, high if starving
+        let fuelChance = 0.2; // default
+        
+        // Boost chance based on altitude (up to +0.3 at 100k)
+        const altitudeBonus = Math.min(0.3, baseY / 100000);
+        fuelChance += altitudeBonus;
+
+        // Massive adjustment based on current fuel levels
+        if (playerFuelRatio < 0.3) {
+          fuelChance += 0.6; // High desperation -> high spawn rate (up to 100%)
+        } else if (playerFuelRatio > 0.8) {
+          fuelChance -= 0.3; // Very full -> rarely spawn
+        }
+
+        fuelChance = Math.max(0, Math.min(1.0, fuelChance));
+
+        // Chance for a double fuel spawn if fuel is extremely low
+        const doubleChance = (playerFuelRatio < 0.15) ? 0.5 : (playerFuelRatio < 0.4 ? 0.2 : 0);
+        const numFuel = Math.random() < fuelChance ? (Math.random() < doubleChance ? 2 : 1) : 0;
+        
         for (let i = 0; i < numFuel; i++) {
           const margin = 80;
           const x = margin + Math.random() * (this.canvasW - margin * 2);
-          // Place canisters in distinct vertical bands so they're spread out
-          const bandH = CHUNK_HEIGHT / numFuel;
+          const bandH = CHUNK_HEIGHT / (numFuel || 1);
           const y = baseY + bandH * i + bandH * 0.2 + Math.random() * bandH * 0.6;
           this.fuelCanisters.push(new FuelCanister(x, y));
+        }
+      }
+
+      // Spawn Powerups (Shield and Boost) starting from 25,000m
+      if (baseY >= 25000) {
+        if (Math.random() < 0.05) { // 5% chance per chunk
+          const margin = 80;
+          const x = margin + Math.random() * (this.canvasW - margin * 2);
+          const y = baseY + Math.random() * CHUNK_HEIGHT;
+          this.shields.push(new ShieldPowerup(x, y));
+        }
+        if (Math.random() < 0.05) { // 5% chance per chunk
+          const margin = 80;
+          const x = margin + Math.random() * (this.canvasW - margin * 2);
+          const y = baseY + Math.random() * CHUNK_HEIGHT;
+          this.boosts.push(new BoostPowerup(x, y));
         }
       }
     }
@@ -224,13 +271,16 @@ export class World {
    * @param {Function} onSparkCollected  - callback(value, x, y)
    * @param {Function} onHazardHit       - callback(player)
    * @param {Function} onFuelCollected   - callback(amount, x, y)
+   * @param {Function} onShieldCollected - callback(x, y)
+   * @param {Function} onBoostCollected  - callback(x, y)
    * @param {ParticleSystem} particles
    */
-  update(dt, player, magnetRadius, onSparkCollected, onHazardHit, onFuelCollected, particles) {
+  update(dt, player, magnetRadius, onSparkCollected, onHazardHit, onFuelCollected, onShieldCollected, onBoostCollected, particles) {
     this._time += dt;
 
     // Ensure world is generated ahead of the player
-    this.ensureGenerated(player.y + this.canvasH);
+    const playerFuelRatio = player.maxFuel > 0 ? player.fuel / player.maxFuel : 1.0;
+    this.ensureGenerated(player.y + this.canvasH, playerFuelRatio);
 
     // Camera
     this.updateCamera(player.y, dt);
@@ -245,6 +295,8 @@ export class World {
     this.hazards       = this.hazards.filter(h => h.y + h.h > cullY);
     this.sparks        = this.sparks.filter(s => s.y > cullY);
     this.fuelCanisters = this.fuelCanisters.filter(f => f.y > cullY);
+    this.shields       = this.shields.filter(s => s.y > cullY);
+    this.boosts        = this.boosts.filter(b => b.y > cullY);
 
     // Update hazards (movement)
     for (const h of this.hazards) {
@@ -299,6 +351,32 @@ export class World {
       }
     }
 
+    // Collision: shields
+    for (const shield of this.shields) {
+      if (shield.collected) continue;
+      const dx = player.x - shield.x;
+      const dy = player.y - shield.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < shield.radius + 30) {
+        shield.collected = true;
+        particles.emitThrust(shield.x, shield.y, 8); // burst on pickup
+        onShieldCollected(shield.x, shield.y);
+      }
+    }
+
+    // Collision: boosts
+    for (const boost of this.boosts) {
+      if (boost.collected) continue;
+      const dx = player.x - boost.x;
+      const dy = player.y - boost.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < boost.radius + 30) {
+        boost.collected = true;
+        particles.emitExplosion(boost.x, boost.y); // big burst
+        onBoostCollected(boost.x, boost.y);
+      }
+    }
+
   } // end update()
 
   // ---- Draw ----
@@ -316,38 +394,129 @@ export class World {
     this._drawWalls(ctx);
     this._drawHazards(ctx);
     this._drawFuelCanisters(ctx);
+    this._drawPowerups(ctx);
     this._drawSparks(ctx);
 
     ctx.restore();
+  }
+
+  _drawPowerups(ctx) {
+    const t = this._time;
+    // Draw Shields
+    for (const shield of this.shields) {
+      if (shield.collected) continue;
+      const screenY = this.worldToScreenY(shield.y);
+      if (screenY > this.canvasH + 30 || screenY < -30) continue;
+
+      const pulse = 0.7 + 0.3 * Math.sin(t * 3.5 + shield.x * 0.03);
+      const r = shield.radius;
+
+      ctx.save();
+      ctx.shadowColor = '#00aaff';
+      ctx.shadowBlur = 16 * pulse;
+
+      // Outer ring
+      ctx.strokeStyle = `rgba(0, 170, 255, ${0.8 * pulse})`;
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.arc(shield.x, screenY, r, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // Inner fill
+      ctx.fillStyle = `rgba(0, 170, 255, ${0.2 * pulse})`;
+      ctx.fill();
+
+      // Icon
+      ctx.font = `bold ${Math.floor(r * 1.2)}px sans-serif`;
+      ctx.fillStyle = `rgba(0, 170, 255, ${0.9 * pulse + 0.1})`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('🛡️', shield.x, screenY + 2);
+
+      ctx.restore();
+    }
+
+    // Draw Boosts
+    for (const boost of this.boosts) {
+      if (boost.collected) continue;
+      const screenY = this.worldToScreenY(boost.y);
+      if (screenY > this.canvasH + 30 || screenY < -30) continue;
+
+      const pulse = 0.7 + 0.3 * Math.sin(t * 5 + boost.x * 0.03);
+      const r = boost.radius;
+
+      ctx.save();
+      ctx.shadowColor = '#ff5500';
+      ctx.shadowBlur = 20 * pulse;
+
+      // Outer ring
+      ctx.strokeStyle = `rgba(255, 85, 0, ${0.9 * pulse})`;
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.arc(boost.x, screenY, r, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // Inner fill
+      ctx.fillStyle = `rgba(255, 85, 0, ${0.3 * pulse})`;
+      ctx.fill();
+
+      // Icon
+      ctx.font = `bold ${Math.floor(r * 1.2)}px sans-serif`;
+      ctx.fillStyle = `rgba(255, 200, 0, ${0.9 * pulse + 0.1})`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('🚀', boost.x, screenY + 2);
+
+      ctx.restore();
+    }
   }
 
   _drawBackground(ctx, altitude) {
     const { canvasW: W, canvasH: H } = this;
     const t = this._time;
 
-    // Zone: 0 = underground lab, 1 = chute, 2 = sky, 3 = space
-    const zone = Math.min(3, Math.floor(altitude / ZONE_CHANGE_ALT));
-
-    // Background gradient by zone
+    // Background gradient by World & Zone
     const grad = ctx.createLinearGradient(0, 0, 0, H);
-    if (zone === 0) {
-      grad.addColorStop(0, '#050820');
-      grad.addColorStop(1, '#0a0415');
-    } else if (zone === 1) {
-      grad.addColorStop(0, '#030b1a');
-      grad.addColorStop(1, '#050820');
-    } else if (zone === 2) {
-      grad.addColorStop(0, '#000510');
-      grad.addColorStop(1, '#030b1a');
+    let zoneColor = 'rgba(0,0,0,0)';
+
+    if (this.currentWorld === 1) {
+      // World 1: Normal Ascent
+      const zone = Math.min(3, Math.floor(altitude / ZONE_CHANGE_ALT));
+      if (zone === 0) {
+        grad.addColorStop(0, '#050820');
+        grad.addColorStop(1, '#0a0415');
+      } else if (zone === 1) {
+        grad.addColorStop(0, '#030b1a');
+        grad.addColorStop(1, '#050820');
+      } else if (zone === 2) {
+        grad.addColorStop(0, '#000510');
+        grad.addColorStop(1, '#030b1a');
+      } else {
+        grad.addColorStop(0, '#000003');
+        grad.addColorStop(1, '#000510');
+      }
+      zoneColor = zone < 2 ? 'rgba(0,100,255,0.04)' : 'rgba(100,0,180,0.04)';
+    } else if (this.currentWorld === 2) {
+      // World 2: Alien Dimension (Green/Purple)
+      grad.addColorStop(0, '#0a1505');
+      grad.addColorStop(1, '#110214');
+      zoneColor = 'rgba(50,255,50,0.05)';
+    } else if (this.currentWorld === 3) {
+      // World 3: The Void (Pitch Black / Red)
+      grad.addColorStop(0, '#000000');
+      grad.addColorStop(1, '#0f0000');
+      zoneColor = 'rgba(255,0,0,0.03)';
     } else {
-      grad.addColorStop(0, '#000003');
-      grad.addColorStop(1, '#000510');
+      // World 4: Quantum Realm (Bright/Blue)
+      grad.addColorStop(0, '#021020');
+      grad.addColorStop(1, '#052040');
+      zoneColor = 'rgba(0,255,255,0.06)';
     }
+
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, W, H);
 
-    // Ambient zone glow (subtle)
-    const zoneColor = zone < 2 ? 'rgba(0,100,255,0.04)' : 'rgba(100,0,180,0.04)';
+    // Ambient zone glow
     ctx.fillStyle = zoneColor;
     ctx.fillRect(0, 0, W, H);
 
@@ -674,6 +843,24 @@ class FuelCanister {
     this.x = x;
     this.y = y;
     this.radius = 40; // visual + collision radius (doubled size)
+    this.collected = false;
+  }
+}
+
+class ShieldPowerup {
+  constructor(x, y) {
+    this.x = x;
+    this.y = y;
+    this.radius = 24;
+    this.collected = false;
+  }
+}
+
+class BoostPowerup {
+  constructor(x, y) {
+    this.x = x;
+    this.y = y;
+    this.radius = 24;
     this.collected = false;
   }
 }

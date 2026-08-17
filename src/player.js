@@ -75,6 +75,10 @@ export class Player {
 
     // Invincibility frames after hit (seconds)
     this._invincible = 0;
+
+    // Powerup states
+    this.hasShield = false;
+    this.hyperBoostTimer = 0;
   }
 
   // ---- Input-driven setters (called from main.js) ----
@@ -106,14 +110,22 @@ export class Player {
   // ---- Hit reaction ----
   /** Called when colliding with a hazard. */
   onHazardHit() {
-    if (this._invincible > 0) return false; // already invincible
+    if (this._invincible > 0 || this.hyperBoostTimer > 0) return false; // already invincible
+
+    if (this.hasShield) {
+      this.hasShield = false;
+      this._invincible = 1.0;
+      this._shakeTime = 0.2;
+      this._shakeMag = 5;
+      return false; // Did not take damage
+    }
     
     // Slow down instead of stopping completely
     this.vy *= 0.4;
     this.vx *= 0.4;
     
-    // Deduct a fixed amount of fuel on hit (1.5 seconds worth)
-    this.drainFuel(0.5);
+    // Deduct a massive amount of fuel on hit (3.0 seconds worth)
+    this.drainFuel(3.0);
 
     this._shakeTime = 0.35;
     this._shakeMag = 14;
@@ -144,16 +156,24 @@ export class Player {
       }
     }
 
-    // Boost
-    this.isBoosting = keys.boost && (this.fuel > 0 || this.attachedHalos.length > 0);
-    if (this.isBoosting) {
-      this.vy += this.BOOST_POWER * dt;
-
-      // Drain fuel from attached halos first (bottom to top), then main fuel
-      this.drainFuel(dt);
-      this._wingPhase += dt * 18; // fast wing flap
+    // Hyper Boost
+    if (this.hyperBoostTimer > 0) {
+      this.hyperBoostTimer -= dt;
+      this.vy += 1200 * dt; // Massive vertical acceleration
+      this._wingPhase += dt * 30; // crazy fast flap
+      this.isBoosting = true;
     } else {
-      this._wingPhase += dt * 5; // idle flap
+      // Normal Boost
+      this.isBoosting = keys.boost && (this.fuel > 0 || this.attachedHalos.length > 0);
+      if (this.isBoosting) {
+        this.vy += this.BOOST_POWER * dt;
+
+        // Drain fuel from attached halos first (bottom to top), then main fuel
+        this.drainFuel(dt);
+        this._wingPhase += dt * 18; // fast wing flap
+      } else {
+        this._wingPhase += dt * 5; // idle flap
+      }
     }
 
     // Steer
@@ -390,7 +410,21 @@ export class Player {
     ctx.fill();
 
     // ---- Boost flame (thruster) ----
-    if (this.isBoosting) {
+    if (this.hyperBoostTimer > 0) {
+      const flameLen = 40 + Math.random() * 20;
+      const flameGrad = ctx.createLinearGradient(0, BODY_H, 0, BODY_H + flameLen);
+      flameGrad.addColorStop(0, 'rgba(255,255,255,1)');
+      flameGrad.addColorStop(0.3, 'rgba(255,85,0,0.9)');
+      flameGrad.addColorStop(1, 'rgba(255,0,0,0)');
+      ctx.shadowColor = '#ff5500';
+      ctx.shadowBlur = 30;
+      ctx.strokeStyle = flameGrad;
+      ctx.lineWidth = 10 + Math.random() * 5;
+      ctx.beginPath();
+      ctx.moveTo(0, BODY_H);
+      ctx.lineTo((Math.random() - 0.5) * 10, BODY_H + flameLen);
+      ctx.stroke();
+    } else if (this.isBoosting) {
       const flameLen = 18 + Math.random() * 12;
       const flameGrad = ctx.createLinearGradient(0, BODY_H, 0, BODY_H + flameLen);
       flameGrad.addColorStop(0, 'rgba(255,255,255,0.9)');
@@ -422,6 +456,20 @@ export class Player {
       ctx.fillStyle = '#00ff88';
       const fillW = 16 * fillRatio;
       ctx.fillRect(-fillW / 2, halo.offsetY - 2, fillW, 4);
+    }
+
+    // ---- Shield ----
+    if (this.hasShield) {
+      const pulse = 0.8 + 0.2 * Math.sin(Date.now() / 150);
+      ctx.strokeStyle = `rgba(0, 170, 255, ${0.7 * pulse})`;
+      ctx.fillStyle = `rgba(0, 170, 255, ${0.15 * pulse})`;
+      ctx.shadowColor = '#00aaff';
+      ctx.shadowBlur = 15;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(0, 0, Math.max(BODY_W, BODY_H) + 12, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
     }
 
     ctx.restore();

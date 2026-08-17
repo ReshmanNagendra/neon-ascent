@@ -19,9 +19,11 @@ const STATE = {
   MENU:    'MENU',
   PLAYING: 'PLAYING',
   SHOP:    'SHOP',
+  CHECKPOINT: 'CHECKPOINT',
 };
 
 let currentState = STATE.MENU;
+let hasPassedCheckpoint = false;
 
 // ================================================================
 //  Persistent Save Data
@@ -39,6 +41,9 @@ const summaryAltEl = document.getElementById('summaryAltitude');
 const summaryBestEl= document.getElementById('summaryBestAltitude');
 const summaryEarnEl= document.getElementById('summaryEarned');
 const shopCurrEl   = document.getElementById('shopCurrencyDisplay');
+const checkpointOverlay = document.getElementById('checkpointOverlay');
+const endlessBtn   = document.getElementById('endlessBtn');
+const newWorldBtn  = document.getElementById('newWorldBtn');
 
 // ================================================================
 //  Core Game Objects (initialized on each run)
@@ -95,6 +100,18 @@ function startGame() {
   floatText = new FloatingTextSystem();
   runSparks = 0;
   runMaxAlt = 0;
+
+  // Checkpoint system: if best altitude is over 50,000, start there
+  if ((save.bestAltitude || 0) >= 50000) {
+    player.y = 50000;
+    player.vy = stats.launchVy * 2.5; // Extra boost since skipping early game
+    runMaxAlt = 50000;
+    hasPassedCheckpoint = true; // don't show the pause screen again if starting at 50k
+    world.currentWorld = 2; // Automatically start in World 2
+  } else {
+    hasPassedCheckpoint = false;
+    world.currentWorld = 1;
+  }
 
   currentState = STATE.PLAYING;
   menuOverlay.classList.add('hidden');
@@ -177,15 +194,42 @@ function update(dt) {
       floatText.spawn(x, y, `+⚡ FUEL`, '#00ff88');
       playFuel();
     },
+    // onShieldCollected
+    (x, y) => {
+      player.hasShield = true;
+      floatText.spawn(x, y, `🛡️ SHIELD!`, '#00aaff');
+      playFuel(); // reuse sound
+    },
+    // onBoostCollected
+    (x, y) => {
+      player.hyperBoostTimer = 2.0; // 2 seconds
+      floatText.spawn(x, y, `🚀 HYPER BOOST!`, '#ff5500');
+      playFuel(); // reuse sound
+    },
     particles
   );
 
   particles.update(dt);
   floatText.update(dt);
 
-  // Track max altitude
+  // Track max altitude and checkpoint notification
   const altitude = player.y; // world Y is altitude in world units
-  if (altitude > runMaxAlt) runMaxAlt = altitude;
+  if (altitude > runMaxAlt) {
+    // Check if we hit a checkpoint milestone (every 50k altitude)
+    if (altitude >= 50000 * world.currentWorld && !hasPassedCheckpoint) {
+      currentState = STATE.CHECKPOINT;
+      checkpointOverlay.querySelector('.logo-glow').textContent = `${(50000 * world.currentWorld).toLocaleString()}M`;
+      checkpointOverlay.classList.remove('hidden');
+      keys.boost = false;
+      touchBoost = false;
+    }
+    runMaxAlt = altitude;
+  }
+  
+  // Reset hasPassedCheckpoint if we enter a new 50k bracket and want to trigger it again at the next milestone
+  if (altitude > 50000 * world.currentWorld && hasPassedCheckpoint) {
+    hasPassedCheckpoint = false;
+  }
 
   // ---- Run-end condition ----
   // Player is out of fuel (and halos) AND has fallen below the camera's bottom edge.
@@ -358,6 +402,23 @@ window.addEventListener('keyup', (e) => {
   if (e.code === 'ArrowLeft')  keys.left  = false;
   if (e.code === 'ArrowRight') keys.right = false;
   if (e.code === 'Space' || e.code === 'ArrowUp') keys.boost = false;
+});
+
+// UI Event Listeners
+menuPlayBtn.addEventListener('click', startGame);
+launchBtn.addEventListener('click', startGame);
+
+endlessBtn.addEventListener('click', () => {
+  checkpointOverlay.classList.add('hidden');
+  currentState = STATE.PLAYING;
+  hasPassedCheckpoint = true;
+});
+
+newWorldBtn.addEventListener('click', () => {
+  checkpointOverlay.classList.add('hidden');
+  currentState = STATE.PLAYING;
+  hasPassedCheckpoint = true;
+  world.currentWorld++; // Move to next world
 });
 
 // Touch / Mouse boost
