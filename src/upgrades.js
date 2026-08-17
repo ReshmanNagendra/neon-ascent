@@ -27,7 +27,7 @@ export const UPGRADE_DEFS = [
     desc: 'Increases max boost fuel capacity.',
     maxLevel: 10,
     cost: (level) => Math.floor(120 * Math.pow(2.1, level)),
-    stat: (level) => 1.5 + level * 0.45,
+    stat: (level) => (1.5 + level * 0.45) * 3,
   },
   {
     key: 'magnet',

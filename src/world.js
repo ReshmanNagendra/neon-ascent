@@ -15,7 +15,7 @@ const SPARK_VALUE_BASE    = 5;    // Base spark value
 const ZONE_CHANGE_ALT     = 1200; // Altitude where zone changes
 const CLEAR_ZONE_HEIGHT   = 100;  // No hazards below this world-Y
 const FUEL_START_HEIGHT   = 200;  // Fuel canisters don't appear below this altitude
-const FUEL_RESTORE_AMOUNT = 0.8;  // Seconds of fuel restored per canister
+const FUEL_RESTORE_AMOUNT = 10;  // Completely restores all fuel
 
 export class World {
   /**
@@ -175,7 +175,7 @@ export class World {
       // Spawn fuel canisters — only above the fuel start height.
       // Frequency: 1 canister guaranteed per chunk, chance of a second at altitude.
       if (baseY >= FUEL_START_HEIGHT) {
-        const numFuel = Math.random() < 0.4 + difficulty * 0.3 ? 2 : 1;
+        const numFuel = Math.random() < 0.2 ? 1 : 0;
         for (let i = 0; i < numFuel; i++) {
           const margin = 80;
           const x = margin + Math.random() * (this.canvasW - margin * 2);
@@ -673,7 +673,7 @@ class FuelCanister {
   constructor(x, y) {
     this.x = x;
     this.y = y;
-    this.radius = 24; // visual + collision radius (doubled size)
+    this.radius = 40; // visual + collision radius (doubled size)
     this.collected = false;
   }
 }
