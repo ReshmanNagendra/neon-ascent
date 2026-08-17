@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Neon Ascent - Pilot a glowing mechanical moth through a cyberpunk chute! Launch, upgrade, and escape in this addictive vertical arcade game." />
+  <title>Neon Ascent</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <!-- Main game canvas -->
+  <canvas id="gameCanvas"></canvas>
+
+  <!-- Background Music -->
+  <audio id="bgm" src="/bgm.mp3" loop preload="auto"></audio>
+
+  <!-- ============================================================ -->
+  <!-- SHOP OVERLAY — shown between runs via JS class toggling       -->
+  <!-- ============================================================ -->
+  <div id="shopOverlay" class="overlay hidden">
+    <div class="shop-panel">
+      <div class="shop-header">
+        <h1 class="shop-title">UPGRADE HUB</h1>
+        <div class="shop-currency">
+          <span class="currency-icon">◈</span>
+          <span id="shopCurrencyDisplay">0</span>
+          <span class="currency-label">SPARKS</span>
+        </div>
+      </div>
+
+      <div class="run-summary" id="runSummary">
+        <div class="summary-stat">
+          <span class="stat-label">BEST RECORD</span>
+          <span class="stat-value" id="summaryBestAltitude">0m</span>
+        </div>
+        <div class="summary-stat">
+          <span class="stat-label">RUN ALTITUDE</span>
+          <span class="stat-value" id="summaryAltitude">0m</span>
+        </div>
+        <div class="summary-stat">
+          <span class="stat-label">SPARKS EARNED</span>
+          <span class="stat-value" id="summaryEarned">+0</span>
+        </div>
+      </div>
+
+      <div class="upgrade-grid" id="upgradeGrid">
+        <!-- Upgrades injected by upgrades.js -->
+      </div>
+
+      <button id="launchBtn" class="launch-btn">
+        <span class="btn-icon">▲</span> LAUNCH
+      </button>
+    </div>
+  </div>
+
+  <!-- ============================================================ -->
+  <!-- MAIN MENU OVERLAY                                             -->
+  <!-- ============================================================ -->
+  <div id="menuOverlay" class="overlay">
+    <div class="menu-panel">
+      <div class="menu-logo">
+        <div class="logo-glow">NEON</div>
+        <div class="logo-main">ASCENT</div>
+        <div class="logo-sub">Escape the cyberpunk chute</div>
+      </div>
+      <div class="moth-preview" id="mothPreview"></div>
+      <div class="menu-instructions">
+        <p><kbd>SPACE</kbd> or <kbd>CLICK</kbd> — Boost</p>
+        <p><kbd>← →</kbd> — Steer</p>
+        <p>Collect sparks. Buy upgrades. Fly higher.</p>
+      </div>
+      <button id="menuPlayBtn" class="launch-btn pulse">
+        <span class="btn-icon">▲</span> LAUNCH
+      </button>
+    </div>
+  </div>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
